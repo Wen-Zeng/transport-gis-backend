@@ -11,6 +11,9 @@ const OWNER = 'wen-zeng';
 const REPO = 'ChinaTransport';
 const BRANCH = 'master';
 
+// Increase timeout for large files
+const TIMEOUT = 30000; // 30 seconds
+
 // Add a test route
 app.get('/', (req, res) => {
   res.send('Backend is running!');
@@ -63,7 +66,8 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
       headers: {
         'Authorization': `token ${GITHUB_TOKEN}`,
         'Accept': 'application/vnd.github.v3+json'
-      }
+      },
+      timeout: TIMEOUT
     });
 
     if (!metadataResponse.ok) {
@@ -82,7 +86,8 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
     const contentResponse = await fetch(downloadUrl, {
       headers: {
         'Authorization': `token ${GITHUB_TOKEN}`
-      }
+      },
+      timeout: TIMEOUT
     });
 
     if (!contentResponse.ok) {
@@ -109,7 +114,8 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
       const lfsResponse = await fetch(lfsUrl, {
         headers: {
           'Authorization': `token ${GITHUB_TOKEN}`
-        }
+        },
+        timeout: TIMEOUT
       });
 
       if (!lfsResponse.ok) {
@@ -142,6 +148,15 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
       details: 'Error fetching data from GitHub'
     });
   }
+});
+
+// Add error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    error: 'Internal Server Error',
+    details: err.message
+  });
 });
 
 const port = process.env.PORT || 3000;
