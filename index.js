@@ -20,18 +20,15 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
     const path = req.params.path;
     console.log('Fetching:', path);
 
-    const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`;
-    console.log('GitHub API URL:', url);
-
-    const response = await fetch(url, {
+    // Get the raw content directly from GitHub
+    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${path}`;
+    console.log('Raw URL:', rawUrl);
+    
+    const response = await fetch(rawUrl, {
       headers: {
-        'Authorization': `token ${GITHUB_TOKEN}`,
-        'Accept': 'application/vnd.github.v3.raw'
+        'Authorization': `token ${GITHUB_TOKEN}`
       }
     });
-
-    console.log('GitHub API Response Status:', response.status);
-    console.log('GitHub API Response Headers:', response.headers);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -39,25 +36,50 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
       throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
     }
 
-    const contentType = response.headers.get('content-type');
-    console.log('Response Content-Type:', contentType);
+    const content = await response.text();
+    
+    // Check if it's an LFS pointer file
+    if (content.startsWith('version https://git-lfs.github.com/spec/v1')) {
+      // Extract the oid from the LFS pointer
+      const oidMatch = content.match(/oid sha256:([a-f0-9]+)/);
+      if (!oidMatch) {
+        throw new Error('Invalid LFS pointer format');
+      }
+      const oid = oidMatch[1];
+      
+      // Fetch the actual content from GitHub LFS
+      const lfsUrl = `https://github.com/${OWNER}/${REPO}/raw/main/${path}`;
+      console.log('LFS URL:', lfsUrl);
+      
+      const lfsResponse = await fetch(lfsUrl, {
+        headers: {
+          'Authorization': `token ${GITHUB_TOKEN}`
+        }
+      });
 
-    let data;
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
+      if (!lfsResponse.ok) {
+        throw new Error(`Failed to fetch LFS content: ${lfsResponse.status}`);
+      }
+
+      const lfsContent = await lfsResponse.text();
+      try {
+        const geoJSON = JSON.parse(lfsContent);
+        res.json(geoJSON);
+      } catch (e) {
+        console.error('JSON Parse Error:', e);
+        throw new Error('Invalid GeoJSON format');
+      }
     } else {
-      const text = await response.text();
-      console.log('Response Text:', text);
-      throw new Error('Invalid response format from GitHub');
+      // Regular file, not LFS
+      try {
+        const geoJSON = JSON.parse(content);
+        res.json(geoJSON);
+      } catch (e) {
+        console.error('JSON Parse Error:', e);
+        throw new Error('Invalid GeoJSON format');
+      }
     }
 
-    // Check if the response is base64 encoded
-    if (data.content) {
-      res.json(data);
-    } else {
-      console.error('Invalid data structure:', data);
-      throw new Error('Invalid data structure from GitHub');
-    }
   } catch (error) {
     console.error('Server error:', error);
     res.status(500).json({ 
