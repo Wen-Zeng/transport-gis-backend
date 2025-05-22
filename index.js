@@ -7,12 +7,21 @@ app.use(cors());
 
 // Your GitHub token
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const OWNER = 'wen-zeng';
+const REPO = 'ChinaTransport';
 
-app.get('/api/geojson/:path', async (req, res) => {
+// Add a test route
+app.get('/', (req, res) => {
+  res.send('Backend is running!');
+});
+
+app.get('/api/geojson/:path(*)', async (req, res) => {
   try {
     const path = req.params.path;
+    console.log('Fetching:', path);
+
     const response = await fetch(
-      `https://api.github.com/repos/wen-zeng/ChinaTransport/contents/${path}`,
+      `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`,
       {
         headers: {
           'Authorization': `token ${GITHUB_TOKEN}`,
@@ -22,13 +31,24 @@ app.get('/api/geojson/:path', async (req, res) => {
     );
 
     if (!response.ok) {
+      console.error('GitHub API error:', response.status, response.statusText);
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
     const data = await response.json();
-    res.json(data);
+    
+    // Check if the response is base64 encoded
+    if (data.content) {
+      res.json(data);
+    } else {
+      throw new Error('Invalid response format from GitHub');
+    }
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Server error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      details: 'Error fetching data from GitHub'
+    });
   }
 });
 
