@@ -9,6 +9,7 @@ app.use(cors());
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const OWNER = 'wen-zeng';
 const REPO = 'ChinaTransport';
+const BRANCH = 'master';
 
 // Add a test route
 app.get('/', (req, res) => {
@@ -22,7 +23,7 @@ app.get('/api/list/*', async (req, res) => {
     const path = req.path.replace('/api/list/', '');
     console.log('Listing path:', path);
 
-    const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`;
+    const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=${BRANCH}`;
     console.log('GitHub API URL:', url);
 
     const response = await fetch(url, {
@@ -59,7 +60,7 @@ app.get('/api/geojson/*', async (req, res) => {
     const parentPath = path.split('/').slice(0, -1).join('/');
     console.log('Parent path:', parentPath);
     
-    const listUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${parentPath}`;
+    const listUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${parentPath}?ref=${BRANCH}`;
     console.log('Listing URL:', listUrl);
     
     const listResponse = await fetch(listUrl, {
@@ -75,7 +76,7 @@ app.get('/api/geojson/*', async (req, res) => {
     }
 
     // Get the raw content
-    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${path}`;
+    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${path}`;
     console.log('Raw URL:', rawUrl);
     
     const response = await fetch(rawUrl, {
@@ -102,7 +103,7 @@ app.get('/api/geojson/*', async (req, res) => {
       const oid = oidMatch[1];
       
       // Fetch the actual content from GitHub LFS
-      const lfsUrl = `https://github.com/${OWNER}/${REPO}/raw/main/${path}`;
+      const lfsUrl = `https://github.com/${OWNER}/${REPO}/raw/${BRANCH}/${path}`;
       console.log('LFS URL:', lfsUrl);
       
       const lfsResponse = await fetch(lfsUrl, {
