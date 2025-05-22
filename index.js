@@ -1,9 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const compression = require('compression');
+const { Transform } = require('stream');
 
 const app = express();
 app.use(cors());
+app.use(compression()); // Enable compression
 
 // Your GitHub token
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
@@ -66,8 +69,7 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
       headers: {
         'Authorization': `token ${GITHUB_TOKEN}`,
         'Accept': 'application/vnd.github.v3+json'
-      },
-      timeout: TIMEOUT
+      }
     });
 
     if (!metadataResponse.ok) {
@@ -83,11 +85,11 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
     const downloadUrl = metadata.download_url;
     console.log('Download URL:', downloadUrl);
 
+    // Stream the response
     const contentResponse = await fetch(downloadUrl, {
       headers: {
         'Authorization': `token ${GITHUB_TOKEN}`
-      },
-      timeout: TIMEOUT
+      }
     });
 
     if (!contentResponse.ok) {
@@ -96,50 +98,52 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
       throw new Error(`Failed to fetch content: ${contentResponse.status}`);
     }
 
-    const content = await contentResponse.text();
-    
-    // Check if it's an LFS pointer file
-    if (content.startsWith('version https://git-lfs.github.com/spec/v1')) {
-      // Extract the oid from the LFS pointer
-      const oidMatch = content.match(/oid sha256:([a-f0-9]+)/);
-      if (!oidMatch) {
-        throw new Error('Invalid LFS pointer format');
-      }
-      const oid = oidMatch[1];
-      
-      // Fetch the actual content from GitHub LFS
-      const lfsUrl = `https://github.com/${OWNER}/${REPO}/raw/${BRANCH}/${path}`;
-      console.log('LFS URL:', lfsUrl);
-      
-      const lfsResponse = await fetch(lfsUrl, {
-        headers: {
-          'Authorization': `token ${GITHUB_TOKEN}`
-        },
-        timeout: TIMEOUT
-      });
+    // Set appropriate headers
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Transfer-Encoding', 'chunked');
 
-      if (!lfsResponse.ok) {
-        throw new Error(`Failed to fetch LFS content: ${lfsResponse.status}`);
-      }
+    // Create a transform stream to handle LFS pointers
+    const transformStream = new Transform({
+      async transform(chunk, encoding, callback) {
+        try {
+          const content = chunk.toString();
+          
+          // Check if it's an LFS pointer file
+          if (content.startsWith('version https://git-lfs.github.com/spec/v1')) {
+            // Extract the oid from the LFS pointer
+            const oidMatch = content.match(/oid sha256:([a-f0-9]+)/);
+            if (!oidMatch) {
+              throw new Error('Invalid LFS pointer format');
+            }
+            
+            // Fetch the actual content from GitHub LFS
+            const lfsUrl = `https://github.com/${OWNER}/${REPO}/raw/${BRANCH}/${path}`;
+            console.log('LFS URL:', lfsUrl);
+            
+            const lfsResponse = await fetch(lfsUrl, {
+              headers: {
+                'Authorization': `token ${GITHUB_TOKEN}`
+              }
+            });
 
-      const lfsContent = await lfsResponse.text();
-      try {
-        const geoJSON = JSON.parse(lfsContent);
-        res.json(geoJSON);
-      } catch (e) {
-        console.error('JSON Parse Error:', e);
-        throw new Error('Invalid GeoJSON format');
+            if (!lfsResponse.ok) {
+              throw new Error(`Failed to fetch LFS content: ${lfsResponse.status}`);
+            }
+
+            // Stream the LFS content
+            lfsResponse.body.pipe(res);
+          } else {
+            // Regular file, not LFS
+            callback(null, chunk);
+          }
+        } catch (error) {
+          callback(error);
+        }
       }
-    } else {
-      // Regular file, not LFS
-      try {
-        const geoJSON = JSON.parse(content);
-        res.json(geoJSON);
-      } catch (e) {
-        console.error('JSON Parse Error:', e);
-        throw new Error('Invalid GeoJSON format');
-      }
-    }
+    });
+
+    // Pipe the response through our transform stream
+    contentResponse.body.pipe(transformStream).pipe(res);
 
   } catch (error) {
     console.error('Server error:', error);
