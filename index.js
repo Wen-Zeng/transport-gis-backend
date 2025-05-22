@@ -50,48 +50,48 @@ app.get('/api/list/*', async (req, res) => {
   }
 });
 
-app.get('/api/geojson/*', async (req, res) => {
+app.get('/api/geojson/:path(*)', async (req, res) => {
   try {
-    // Get the path from the URL, removing the /api/geojson/ prefix
-    const path = req.path.replace('/api/geojson/', '');
-    console.log('Fetching path:', path);
+    const path = req.params.path;
+    console.log('Fetching:', path);
 
-    // First, try to list the contents of the parent directory
-    const parentPath = path.split('/').slice(0, -1).join('/');
-    console.log('Parent path:', parentPath);
-    
-    const listUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${parentPath}?ref=${BRANCH}`;
-    console.log('Listing URL:', listUrl);
-    
-    const listResponse = await fetch(listUrl, {
+    // First get the file metadata
+    const metadataUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=${BRANCH}`;
+    console.log('Metadata URL:', metadataUrl);
+
+    const metadataResponse = await fetch(metadataUrl, {
       headers: {
         'Authorization': `token ${GITHUB_TOKEN}`,
         'Accept': 'application/vnd.github.v3+json'
       }
     });
 
-    if (listResponse.ok) {
-      const files = await listResponse.json();
-      console.log('Available files:', files.map(f => f.name));
+    if (!metadataResponse.ok) {
+      const errorText = await metadataResponse.text();
+      console.error('GitHub API Error Response:', errorText);
+      throw new Error(`GitHub API error: ${metadataResponse.status} - ${errorText}`);
     }
 
-    // Get the raw content
-    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${path}`;
-    console.log('Raw URL:', rawUrl);
-    
-    const response = await fetch(rawUrl, {
+    const metadata = await metadataResponse.json();
+    console.log('File metadata:', metadata);
+
+    // Use the download_url from the metadata
+    const downloadUrl = metadata.download_url;
+    console.log('Download URL:', downloadUrl);
+
+    const contentResponse = await fetch(downloadUrl, {
       headers: {
         'Authorization': `token ${GITHUB_TOKEN}`
       }
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('GitHub API Error Response:', errorText);
-      throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
+    if (!contentResponse.ok) {
+      const errorText = await contentResponse.text();
+      console.error('Content fetch error:', errorText);
+      throw new Error(`Failed to fetch content: ${contentResponse.status}`);
     }
 
-    const content = await response.text();
+    const content = await contentResponse.text();
     
     // Check if it's an LFS pointer file
     if (content.startsWith('version https://git-lfs.github.com/spec/v1')) {
