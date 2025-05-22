@@ -15,12 +15,66 @@ app.get('/', (req, res) => {
   res.send('Backend is running!');
 });
 
-app.get('/api/geojson/:path(*)', async (req, res) => {
+// Add a route to list repository contents
+app.get('/api/list/*', async (req, res) => {
   try {
-    const path = req.params.path;
-    console.log('Fetching:', path);
+    // Get the path from the URL, removing the /api/list/ prefix
+    const path = req.path.replace('/api/list/', '');
+    console.log('Listing path:', path);
 
-    // Get the raw content directly from GitHub
+    const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`;
+    console.log('GitHub API URL:', url);
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('GitHub API Error Response:', errorText);
+      throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      details: 'Error listing repository contents'
+    });
+  }
+});
+
+app.get('/api/geojson/*', async (req, res) => {
+  try {
+    // Get the path from the URL, removing the /api/geojson/ prefix
+    const path = req.path.replace('/api/geojson/', '');
+    console.log('Fetching path:', path);
+
+    // First, try to list the contents of the parent directory
+    const parentPath = path.split('/').slice(0, -1).join('/');
+    console.log('Parent path:', parentPath);
+    
+    const listUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${parentPath}`;
+    console.log('Listing URL:', listUrl);
+    
+    const listResponse = await fetch(listUrl, {
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+
+    if (listResponse.ok) {
+      const files = await listResponse.json();
+      console.log('Available files:', files.map(f => f.name));
+    }
+
+    // Get the raw content
     const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${path}`;
     console.log('Raw URL:', rawUrl);
     
