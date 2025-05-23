@@ -99,14 +99,17 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
     }
 
     // Set appropriate headers
-    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-    // Create a transform stream to handle LFS pointers
+    // Create a transform stream to handle LFS pointers and encoding
     const transformStream = new Transform({
       async transform(chunk, encoding, callback) {
         try {
-          const content = chunk.toString();
+          const content = chunk.toString('utf8');
           
           // Check if it's an LFS pointer file
           if (content.startsWith('version https://git-lfs.github.com/spec/v1')) {
@@ -134,7 +137,9 @@ app.get('/api/geojson/:path(*)', async (req, res) => {
             lfsResponse.body.pipe(res);
           } else {
             // Regular file, not LFS
-            callback(null, chunk);
+            // Ensure proper UTF-8 encoding
+            const buffer = Buffer.from(content, 'utf8');
+            callback(null, buffer);
           }
         } catch (error) {
           callback(error);
